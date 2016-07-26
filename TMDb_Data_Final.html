@@ -1,0 +1,256 @@
+<!-- location: TMDb/TMDb_Data_Final.html
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<!--******************************************************************************************************/
+/** TMDb Web Connector For Tableau																		**/
+/** Powered by The Movie Database (https://www.themoviedb.org/)					 						**/
+/** Author: Michele Tessari 																			**/
+/** Version 1.0                            																**/
+/*******************************************************************************************************-->
+
+<head>
+
+	<meta charset="utf-8" name="viewport" content="width=device-width, initial-scale=1" http-equiv="Cache-Control" content="no-store"/>
+
+	<title>The Movie Database - Web Data Connector for Tableau</title>
+
+	<!-- TABLEAU WDC and JQUERY 2.2.0 -->
+	<script src="https://connectors.tableau.com/libs/tableauwdc-1.1.1.js" type="text/javascript"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js" type="text/javascript"></script>
+
+	<!-- JQUERY UI -->
+	<link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/themes/smoothness/jquery-ui.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
+
+	<!-- Latest compiled and minified CSS -->
+	<link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+
+	<!-- Latest compiled JavaScript -->
+	<script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
+
+
+	<!-- DATA GATHERING (2nd PHASE) -->
+	<script type="text/javascript">
+		(function(){
+			
+			// HELPER FUNCTIONS 
+			function buildURI(startDate,endDate,rating,page){
+				var uri = 'https://api.themoviedb.org/3/discover/movie?api_key=28955ea53ec567957d46eff1f2b4ac24&primary_release_date.lte='+ endDate + '&primary_release_date.gte=' + startDate + '&vote_average.gte=' + rating + '&page=' + page;
+				return uri;
+			}
+
+			function convertGenre(genreIds){
+				var genre = "";
+				//for (var i=0;i<genreIds.length;i++){   // (uncomment for a string containing all possible genres for a movie)
+					switch (genreIds[0]) {
+						case 28: genre = genre + "Action, "; break;
+						case 12: genre = genre + "Adventure, "; break;
+						case 16: genre = genre + "Animation, "; break;
+						case 35: genre = genre + "Comedy, "; break;
+						case 80: genre = genre + "Crime, "; break;
+						case 99: genre = genre + "Documentary, "; break;
+						case 18: genre = genre + "Drama, "; break;
+						case 10751: genre = genre + "Family, "; break;
+						case 14: genre = genre + "Fantasy, "; break;
+						case 10769: genre = genre + "Foreign, "; break;
+						case 36: genre = genre + "History, "; break;
+						case 27: genre = genre + "Horror, "; break;
+						case 10402: genre = genre + "Music, "; break;
+						case 9648: genre = genre + "Mystery, "; break;
+						case 10749: genre = genre + "Romance, "; break;
+						case 878: genre = genre + "Science Fiction, "; break;
+						case 10770: genre = genre + "TV Movie, "; break;
+						case 53: genre = genre + "Thriller, "; break;
+						case 10752: genre = genre + "War, "; break;
+						case 37: genre = genre + "Western, "; break;
+					}
+				//}
+				return genre.substr(0,genre.length-2);
+			}
+
+			// BUILDING THE CONNECTOR
+			var myConnector = tableau.makeConnector();
+
+			myConnector.getColumnHeaders = function(){
+				var fieldNames = ['Id','Title','Genre','Release Date','Rating Average','Number of Votes','Popularity','Poster Path','Backdrop Path','Language','Overview'];
+				var fieldTypes = ['int','string','string','date','float','int','float','string','string','string','string']; //6 possible types: bool,date,datetime,float,int,string.
+				tableau.headersCallback(fieldNames,fieldTypes);
+			}
+
+
+
+			myConnector.getTableData = function(lastRecordToken){
+				
+				var dataToReturn=[];
+				var moreData=true;
+				var connectionData = JSON.parse(tableau.connectionData);
+
+				if(!lastRecordToken){
+					lastRecordToken = JSON.stringify({'page': 1, 'record': 1})
+				}
+
+				var page =  parseInt(JSON.parse(lastRecordToken).page);
+				var record = parseInt(JSON.parse(lastRecordToken).record);
+
+				var xhr = $.ajax({
+					url: buildURI(connectionData.startDate,connectionData.endDate,connectionData.rating,page),
+					dataType: 'JSON', //e.g. JSON or XML
+					
+
+					success: function(data){
+
+						if(data.results){
+							
+							for (var i=0; i<data.results.length;i++) {
+								if (record<=parseInt(connectionData.maxRecords)) {
+									var entry = {	'Id': data.results[i].id,
+													'Title': data.results[i].title,
+													'Genre': convertGenre(data.results[i].genre_ids),
+													'Release Date': data.results[i].release_date,
+													'Rating Average': data.results[i].vote_average,
+													'Number of Votes': data.results[i].vote_count,
+													'Popularity': data.results[i].popularity,
+													'Poster Path': 'https://image.tmdb.org/t/p/w185' + data.results[i].poster_path,
+													'Backdrop Path': 'https://image.tmdb.org/t/p/w185' + data.results[i].backdrop_path,
+													'Language': data.results[i].original_language,
+													'Overview': data.results[i].overview};
+									dataToReturn.push(entry);
+									record++
+								}
+								else {
+									break;
+								}
+
+							}
+
+							moreData = (record<=parseInt(connectionData.maxRecords));
+
+							lastRecordToken = JSON.stringify({'page': page+1, 'record': record});
+							tableau.dataCallback(dataToReturn,lastRecordToken,moreData);
+						}
+
+						else {tableau.abortWithError("No data returned for the current selections.");}
+					},
+					
+
+					error: function(xhr,ajaxOptions,thrownError){
+						//If the connection fails, log the error and return an empty set
+						tableau.log("Connection error: " + xhr.responseText + "\n" + thrownError);
+						tableau.abortWithError("Error while trying to connect to the TMDb data source.");
+					}
+				});
+			}
+
+
+
+			tableau.registerConnector(myConnector);
+
+
+
+		})();
+
+
+
+	//<!-- USER INPUT (1st PHASE) -->
+
+		$(document).ready(function(){
+
+			console.clear();
+
+			$("#from").datepicker({ defaultDate: '01/01/2000' });
+			$("#to").datepicker();
+
+			$("#submitButton").click(function(){
+				
+				var startDate = $("#from").datepicker('getDate');
+				var endDate = $("#to").datepicker('getDate');
+
+				var rating = $("#rating").val();
+				var maxRecords = $("#records").val();
+
+				tableau.connectionName = "TMDb Data";
+				tableau.connectionData = JSON.stringify({'startDate': startDate, 'endDate': endDate, 'rating': rating, 'maxRecords': maxRecords}); // MUST be a string (e.g. use JSON.stringify)
+				tableau.submit();
+			});
+		});
+
+	</script>
+
+
+</head>
+
+<!-- HTML MARKUP -->
+<body style="background:url(./images/border.png) no-repeat center center fixed;background-size: cover">
+
+	<div class="container-fluid text-center">
+
+		<div class="page-header" style="font-family:'Century Gothic',CenturyGothic,AppleGothic,sans-serif">
+			<h3><b>TMDb Web Data Connector</b></h3>
+			<a href="https://www.themoviedb.org/"><img src="TMDBLogo.png" alt="Powered by TMDb" style="width:130px;height:38px"></a>
+		</div>
+
+		<div class="row" style="margin-right:5%;margin-left:5%">
+
+			<div class="col-sm-6">
+			
+			<p class="well well-sm" style="margin-right:20%;margin-left:20%"> <b>Release Date Range</b></p>
+			<p>
+				<form class="form-inline" role="form">
+    			<div class="form-group">
+      				<input type="text" class="form-control input-sm" id="from" placeholder="Start date">
+    			</div>
+   				<div class="form-group">
+      				<label for="to">-</label>
+      				<input type="text" class="form-control input-sm" id="to" placeholder="End date">
+    			</div>
+
+			</p>
+			
+			</div>
+
+			<div class="col-sm-6">
+
+			<p class="well well-sm" style="margin-right:20%;margin-left:20%"><b>Minimum rating</b></p>
+			<p style="display: inline-block">
+				<select class="form-control input-sm" id="rating">
+        		<option>1</option>
+        		<option>2</option>
+        		<option>3</option>
+        		<option>4</option>
+        		<option>5</option>
+        		<option>6</option>
+        		<option>7</option>
+        		<option>8</option>
+        		<option>9</option>
+        		<option>10</option>
+        		</select>
+			</p>
+
+			</div>
+			</div>
+			
+			<div>
+			<br><p class="well well-sm" style="margin-right:20%;margin-left:20%"><b>Number of Records</b></p>
+			<p>
+				<form class="form-inline" role="form">
+    			<div class="form-group"  style="display: inline-block">
+      				<input type="text" class="form-control input-sm" id="records" placeholder="Maximum no. records">
+      				(sorted by most popular first)
+    			</div>
+			</div>
+
+				<!-- <input type="number" id="records" max="1000" value="100"> most popular movies -->
+			</p>
+			<p><i>(API request limit: 30 requests every 10 s - Every request returns 20 records)</i></p>
+
+
+			<p style="margin-right:20%;margin-left:20%"><br><button type="button" id="submitButton" class="btn btn-primary btn-block btn-lg" style="background:#5a7825">Get Movie Data!</button></p>
+		<div>
+	</div>
+</div>
+</body>
+</html>
+
